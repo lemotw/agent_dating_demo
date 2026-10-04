@@ -1,108 +1,93 @@
-# Agent Between
+# Agent Chat / Agent Between
 
-SolidJS + TypeScript staged application shell, served by a Cloudflare Worker with static assets and a global Lobby Durable Object. The original visual references remain in `prototype/`.
+A desktop MVP for meeting people through conversations between their local Agents. SolidJS/Vite renders focused stages with editable public cards, independent consent, readable Agent messages and a separate peer summary screen. Historical visual references remain in `prototype/`.
 
-## Local development
+## Flow and privacy
 
-Requires Node.js 22.12+ (Node.js 24 recommended).
+Pedelec readiness → private interview → review/approve public profile → Lobby waiting → automatic proposal → both accept → WebRTC → fresh local Pedelec match sessions → alternating Agent exchange → natural/manual/per-Agent cap ending → peer summary → return to Lobby.
+
+Only the approved public profile is persisted in this browser. Disabled sections and private interview transcripts are discarded. A fresh match session receives only the two approved profiles and current conversation. Completed messages and summaries travel over an ordered DataChannel. The Worker handles presence, consent, signaling and TURN authorization, with no model execution or chat history. There is no swipe discovery or human chat.
+
+The Lobby selects the online eligible waiter with the greatest server-assigned `joinedAt`. Reservations and consent transitions are atomic. Declined pairs are excluded for the current Lobby sessions; returning after a match retains that session's exclusions.
+
+## Prerequisites and local development
+
+Use Node.js 22.12+ (24 recommended), a desktop browser with the Pedelec extension, running Pedelec Desktop and a configured default provider/model. Each browser context must approve the exact app origin in Pedelec. Profiles restore before readiness, but entering the Lobby requires Pedelec availability and origin approval. The interview start action can request approval through the SDK.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite, normally `http://localhost:5173`. The Cloudflare Vite plugin runs the Worker and Durable Object locally alongside the client. Lobby development needs no Cloudflare login; real TURN issuance needs a Cloudflare Realtime TURN key configured as described below.
+Open the origin printed by Vite (normally `http://localhost:5173`). Keep the hostname/port consistent across tests and Pedelec approvals. The Cloudflare Vite plugin runs the Worker and global Lobby Durable Object locally alongside the browser app. No Cloudflare login is needed for the local Lobby. Real connection setup requires configured TURN credentials; missing configuration returns a visible service-unavailable error.
 
 ```sh
+npm test
 npm run typecheck
 npm run build
 npm run preview
 ```
 
-Type checking regenerates `worker-configuration.d.ts` from Wrangler configuration, then checks browser, Worker and Vite configuration separately. Build produces `dist/client` and `dist/agent_chat`; preview serves the built Worker and assets.
+`typecheck` includes `npm run typegen` (`wrangler types`) and checks app, Worker and Vite configuration. `build` produces `dist/client` and `dist/agent_chat`; `preview` serves the built Worker/assets. The unit suite uses Node's runner and Vite's TypeScript loader without a separate E2E framework. Session/transport doubles test orchestration; they do not replace live Pedelec/WebRTC acceptance.
 
-With dev running:
+With a dedicated, otherwise empty dev or preview Lobby running:
 
 ```sh
 npm run test:smoke
+npm run test:lobby
 ```
 
-For a preview server on a different port, set `SMOKE_BASE_URL` to its origin. Smoke checks exercise SPA fallback, API status/method boundaries, rejected unauthorized TURN requests, and a real Lobby WebSocket including malformed messages and size-limit closure.
+For another port, set `SMOKE_BASE_URL` to its origin. PowerShell example: `$env:SMOKE_BASE_URL = 'http://127.0.0.1:5174'`. Run these suites sequentially because they share the global Lobby. They cover route boundaries, public-only payloads, consent, recency/rejection, reservation exclusivity, duplicate tabs, signaling authority, TURN authorization/rate limits and disconnect/return/rematch.
 
-## Interview and profile flow
+## Cloudflare TURN and deployment
 
-Connect, interview and publish/ready now use a real browser-only `@kaoruisaac/pedelec` managed session. `checkAvailability()` reports extension, origin approval and Desktop readiness. The explicit start button requests approval through SDK session creation when needed; no custom extension probing, folder selection, filesystem tools or provider/model selectors are used. The user's Desktop default configuration is used.
+Create a **Realtime TURN key** in the Cloudflare dashboard. Its key ID and TURN API token are separate values used by the Worker to generate short-lived credentials. Follow the official [TURN credential guide](https://developers.cloudflare.com/realtime/turn/generate-credentials/).
 
-Six networking checkpoints support skip, completed `onChat` replies, serialized `sendText()` calls and visible errors. After the interview, the same private session returns a strict JSON candidate. Invalid JSON or schema fails visibly and can be retried; no profile fields are invented. The review page supports editing public summary, topics, looking-for items and every section, with section sharing and overall publication consent unchecked by default. A name, summary, at least one topic/looking-for item and at least one nonempty enabled section are required.
-
-Only approved content is stored under `agent-chat:profile:v1`. Disabled candidate sections and raw interview text are not persisted. Valid profiles matching the local identity restore on reload, with continue, edit and re-interview actions. `toLobbyAgentProfile()` in `src/features/profile/profile.ts` is the centralized allowlist for all future Lobby/peer payloads; never serialize the local profile directly. Ending setup ends the interview session and clears in-memory private content. Session cleanup failures block navigation and are visible. Future match chat must create a fresh session using only sanitized profiles.
-
-Publishing/continuing with an approved profile now opens a persistent Lobby WebSocket and sends only `toLobbyAgentProfile()` output. Waiting, proposed match, connection, exchange and summary share the same mounted client controller, so stage changes do not drop presence. Both users see the real peer card and independently accept or decline. Accepting alone shows waiting for the peer decision. Only the server `match_ready` event enters preparing connection. Leaving the flow closes the socket; reconnect is explicit and starts a new Lobby session. Real local Agent exchange and peer summaries are implemented in Phase 5 below. Worker code does not import Pedelec.
-
-Per `phase-0-shared-contract.md`, implementation phases do not run tests, typecheck, build or browser/manual acceptance; verification is deferred to Phase 6. The SDK dependency is installed at version 0.4.9 (lockfile recorded).
-
-The browser creates one UUID in localStorage under `agent-chat.clientId` and restores it on reload. This is an identifier, not an authentication credential. Storage failure is shown on the connect screen.
-
-- `src/features/`: feature surfaces and browser utilities, separated by domain.
-- `src/shared/constants.ts`: the single source for the per-Agent sent-turn cap and protocol version.
-- `src/shared/protocol.ts`: validated public profile, Lobby signaling/control, TURN request/response and peer DataChannel envelopes.
-- `worker/index.ts`: API routing and static asset fallback.
-- `worker/lobby-do.ts`: global hibernation Lobby, recency matching, independent consent, rejection memory and alarm cleanup. SQLite stores only short-lived approved cards/control records; no interview or Agent transcript storage.
-
-## Route contract
-
-| Route                            | Behavior                                                                                                                    |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                | `{ ok: true, protocolVersion }`                                                                                             |
-| `GET /api/lobby?clientId=<UUID>` | WebSocket upgrade forwarded to `LOBBY.getByName('global')`; without upgrade returns 426                                     |
-| `POST /api/turn-credentials`     | 501 `not_implemented`, `Cache-Control: no-store`; phase 4 must validate an active accepted match before issuing credentials |
-| Other `/api/*`                   | JSON 404                                                                                                                    |
-| Other paths                      | Static assets with SPA fallback                                                                                             |
-
-Lobby control envelopes use `{ v: 1, type }`. After `connected`, the browser sends `hello` with a strictly validated public profile; `published` returns an ephemeral `lobbySessionId` and waiting state. The server assigns `joinedAt`, selects the newest eligible online waiter and reserves both participants synchronously before `match_proposed` is sent. Both receive the same UUID match ID and deterministic offerer (newer entrant). `accept_match` changes only the sending session's consent; `consent_updated` reports both decisions and `match_ready` is emitted only when both accepted. `decline_match` cancels, sends `match_cancelled`/`waiting`, remembers the rejected pair for both sessions and rematches against other peers. Returning to waiting preserves the original server join order.
-
-Socket attachments contain identity, session, join time, status, match ID and TURN issuance counters, avoiding the attachment size limit for large cards. Approved cards, per-session rejection rows and active match records live in DO SQLite and survive hibernation; session rows are removed on close and orphan cleanup. Hello expires after 10 seconds, consent after 120 seconds and connecting after 60 seconds, using the single DO alarm scheduled at the earliest deadline. Both DataChannel readiness reports activate a match for at most 30 minutes. Active reservations survive control socket loss; expiry or explicit leave eventually releases them. Connection cancellation pauses surviving clients until they explicitly return to waiting; declined consent still rematches automatically.
-
-Duplicate client IDs are rejected with `duplicate_client` through the upgrade socket, so a second tab cannot enter another reservation. Invalid/extra fields, unknown message types (including Agent messages and summaries), wrong versions and wrong-match consent are rejected. Binary or control messages above 96 KiB close with code 1009. Profiles are public content approved by the user; the server can validate the schema but cannot determine whether an allowed public text field contains a secret. No control payload text is logged.
-
-For Phase 6, with an otherwise empty local dev Lobby, run `npm run test:smoke` and `npm run test:lobby`. The latter covers two-sided proposals, one-sided consent, most-recent selection among rejected waiters, reservation exclusivity, same-pair suppression, duplicate tabs, disconnect/rematch, two-sided readiness and public-only payload rejection. Neither suite was run during Phase 3. The remaining Phase 6 matrix includes real browser UI, hibernation reconstruction, alarm expiration and active DataChannel/socket-loss integration after Phase 4.
-
-## WebRTC transport and TURN
-
-`src/features/rtc/peer.ts` owns one `RTCPeerConnection` and reliable ordered `agent-chat-v1` DataChannel per accepted match. Only the server-assigned offerer creates the channel/offer. SDP and trickle ICE travel through the existing Lobby socket, with socket/session membership, consent, expiry and offerer-role validation. ICE arriving before a remote description is queued, including signals arriving while credentials load. A serialized signaling chain and teardown guards isolate stale matches. Cloudflare STUN and temporary Cloudflare TURN UDP/TCP/TLS servers are configured together so ICE can select a direct route or relay without competing offers.
-
-`POST /api/turn-credentials` accepts `{ matchId, clientId, lobbySessionId }`. The DO validates the current online session, both accepted consents, match membership and connecting/active expiry before contacting Cloudflare. It revalidates after issuance to reject cancellation races. Each participant may request at most three times per match, spaced at least ten seconds; quota reservations survive hibernation. Credential responses use `Cache-Control: no-store`, a one-hour TTL, bounded request/upstream bodies and an eight-second upstream timeout. Missing configuration/upstream failure returns a generic 503; no credentials or SDP/ICE are logged or persisted.
-
-Create a Cloudflare Realtime TURN key and put its values in an ignored root `.dev.vars` file for local development:
+For local development, create an ignored root `.dev.vars`:
 
 ```dotenv
-TURN_KEY_ID=<your TURN key ID>
-TURN_KEY_API_TOKEN=<your TURN key API token>
+TURN_KEY_ID=<YOUR_REALTIME_TURN_KEY_ID>
+TURN_KEY_API_TOKEN=<YOUR_REALTIME_TURN_KEY_API_TOKEN>
 ```
 
-For deployment, provision both using `npx wrangler secret put TURN_KEY_ID` and `npx wrangler secret put TURN_KEY_API_TOKEN`. `wrangler.jsonc` declares only the required secret names, and generated Worker types expose them only to the Worker. Never put their values in `VITE_*`, client source or committed configuration. See the official [TURN credential API](https://developers.cloudflare.com/realtime/turn/generate-credentials/) and [Worker secrets guide](https://developers.cloudflare.com/workers/configuration/secrets/).
+Restart the dev/preview server after configuring secrets. In `wrangler.jsonc`, `secrets.required` contains these **variable names**, never their values. Never put long-lived TURN credentials in `VITE_*`, browser code, Git or documentation.
 
-The Solid connection view exposes preparation, gathering, connecting, connected, temporary disconnection, failure and closure. Setup is bounded by the Lobby's 60-second deadline; a temporary network disconnect has ten seconds to recover. Returning to Lobby cancels and tears down the transport. Once established, a DataChannel survives control socket loss, but cannot authorize new TURN requests without its live session. A local deadline also bounds active transport lifetime when the control socket is lost. Returning after control loss may be refused while the old active reservation is still retained; wait for peer departure/expiry before reconnecting.
+For deployment:
 
-Phase 5 uses `PeerConnection.subscribe()` for received completed envelopes and `send()` for Agent messages, summaries and controls. `send()` returns the transmitted envelope or `null`; orchestration turns increment only on success. Peer JSON is shape/version/match/sender/size validated, Agent turns must be contiguous and within the shared cap, and received message UUIDs use a bounded dedupe set. Backpressure rejects sends instead of buffering indefinitely. Normal peer text never enters Worker control messages. The mounted Lobby controller is retained through exchange/summary and owns each fresh Pedelec match session.
+```sh
+npx wrangler login
+npx wrangler secret put TURN_KEY_ID
+npx wrangler secret put TURN_KEY_API_TOKEN
+npm run deploy
+```
 
-Phase 4 ran only the required `npm run typegen`, with no typecheck/build/tests/browser acceptance per the shared schedule. Phase 6 must run the accumulated checks and real two-browser matrix: consent gate and single offerer; candidates before SDP/credential readiness; direct and forced-relay paths (UDP/TCP/TLS); credential authorization before consent/after expiry/wrong session/foreign client/cancellation during issuance/rate limits; hibernation reconstruction; both readiness acknowledgements; control loss with active peer transport; bounded setup/disconnect/active expiry; explicit failure return; leave during setup; malformed/wrong-match/foreign-sender/replayed/oversized DataChannel messages and invalid turns; application messages and summaries sent only over the DataChannel; production bundle secret and diagnostic exclusion.
+Enter secrets at Wrangler's prompts. `deploy` builds and uploads the generated Worker and static assets together. `wrangler.jsonc` declares `LOBBY` bound to the exported `Lobby` Durable Object class, and migration `v1` creates SQLite storage. Preserve that migration; use new migration tags for future class changes. `ASSETS` handles SPA fallback, with `/api/*` routed through the Worker first. See [Workers Vite integration](https://developers.cloudflare.com/workers/vite-plugin/get-started/), [WebSocket hibernation](https://developers.cloudflare.com/durable-objects/examples/websocket-hibernation-server/) and [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/).
 
-## Deployment
+`POST /api/turn-credentials` requires an online current Lobby session in an unexpired mutually accepted match. The Worker revalidates after issuance, bounds bodies, enforces three requests per participant/match spaced ten seconds apart, and returns `Cache-Control: no-store`. The browser receives one-hour temporary ICE credentials. Cloudflare STUN and TURN UDP/TCP/TLS are configured together; TURN failure is surfaced rather than silently claiming connection success.
 
-When ready to deploy to your Cloudflare account, authenticate Wrangler and run `npm run deploy`. This builds the app and deploys the generated Worker/assets configuration, including the Lobby class migration. Phase 1 verification does not deploy remote resources. Future TURN secrets belong in Worker secrets, never in browser/Vite environment variables.
+## Recovery and bounds
 
-The integration follows the official [Workers Vite plugin guide](https://developers.cloudflare.com/workers/vite-plugin/get-started/) and [Durable Object WebSocket hibernation example](https://developers.cloudflare.com/durable-objects/examples/websocket-hibernation-server/).
+One top-level app stage controls the major screen. The mounted Lobby controller owns proposal, RTC, session and exchange state independently from the saved profile. Reload restores identity/profile and returns to readiness, losing the interview/match. It never restores an old socket or transcript.
 
+Lobby loss before an exchange retries after 1, 2, 4 and 8 seconds, with visible status and fresh sanitized publication. Only one socket is retained. Invalid protocol/duplicate identity failures require explicit correction/retry. Losing the control session during connection/exchange ends the match and frees its reservation; returning explicitly creates/resumes waiting. Peer loss cancels pending generation and releases resources. Local Agent errors stop automatic replies, notify the peer through end control when possible and retain a visible failure. Missing summaries are shown as unavailable.
 
-## Real Agent exchange and peer summaries (Phase 5)
+Shared bounds/timeouts live in `src/shared/constants.ts`: consent 120 seconds, RTC setup 60 seconds, disconnected RTC grace ten seconds, Agent operation/readiness 120 seconds and peer summary 180 seconds. Separately configurable `MAX_SENT_TURNS_PER_AGENT = 50` counts successfully transmitted complete messages only. Normal replies and summaries never overlap on one session. Peer envelopes are version/match/sender/UUID/turn/size validated and deduplicated.
 
-Accepted matches now create a fresh local Pedelec managed session with only the approved public profiles. The offerer opens after the DataChannel and both match sessions are ready (`control: session_ready`). Completed `onChat` output must be one strict JSON reply/finish object. Streaming deltas remain local; only validated visible text enters WebRTC. There is no Worker model call or transcript storage.
+Profile text is bounded to 4,000 characters, lists to 20 items of 120 characters, sections to six, Lobby messages to 96 KiB, SDP to 64 KiB, peer envelopes to 80 KiB and Agent/summary text to 16,000 characters. Malformed peer messages are ignored; oversized server control payloads close the socket. Application code does not log payload text, credentials, SDP or transcripts.
 
-The browser serializes `sendText()` and alternates turns, incrementing the imported `MAX_SENT_TURNS_PER_AGENT` only when transmission succeeds. Natural finish, manual `end_requested`/`end_ack`, or the cap stops normal replies. Failed generation is visible with explicit retry/end; failed transmission retains a validated reply for retry without calling the model again. In-flight work settles before summary generation, with its unsent normal reply discarded after ending.
+## Two-client acceptance
 
-Each local session makes one final structured summary request using the approved context and quoted displayed transcript, including the final peer message. Each valid summary is sent once; `control: summary_ack` confirms receipt. The final screen identifies the peer Agent, labels its received summary, gives the ending reason and offers return to Lobby. Missing peer summaries are shown as unavailable, never replaced by local text. Readiness, Agent operation and summary deadlines are shared source constants; timed-out operations cannot start another request on the same session.
+Use two browser profiles, or a normal window plus Incognito with Pedelec allowed in both. Two normal tabs share localStorage/client identity and cannot act as separate users. Both clients may use the same machine/Desktop runtime, with distinct `clientId` values and independent Pedelec sessions. Open the same server origin, approve Pedelec separately, interview using fictional input, review/enable public sections, publish, accept on both sides, wait for DataChannel/Agents and inspect alternating messages. End, confirm received peer summaries, then return and introduce a third context for another eligible match.
 
-The Lobby controller remains mounted through exchange and summary. Summary completion/timeout or leaving ends Pedelec and tears down WebRTC, clears match runtime state and releases the Lobby reservation when connected. Returning clears the final report and resumes waiting with the approved local profile preserved. The summary screen retains peer identity and the received summary only for the current page.
+The complete 21-scenario procedure and verification evidence are in [docs/acceptance.md](docs/acceptance.md). For relay verification, temporarily set `iceTransportPolicy: "relay"` in `src/features/rtc/peer.ts`, rebuild both clients and inspect the selected `relay` candidate in `chrome://webrtc-internals`; restore `"all"` afterward. Keep credential values out of exported diagnostics.
 
-Phase 5 ran no tests, typecheck, build or browser acceptance under the shared schedule. Phase 6 must run accumulated checks and the detailed acceptance matrix appended to `.agent_temp/phase-5-agent-exchange-summary.md`, including real two-browser Pedelec, cap/natural/manual termination, malformed replies, retry, prompt injection, summary acknowledgement/timeouts, late completions and return/rematch races.
+## MVP limitations
+
+- Anonymous local identity only; no accounts or account sync.
+- Final profile stored locally; no persistent match history or server-side chat history.
+- No advanced matchmaking, swipe discovery or human chat after summary.
+- Match lost on page reload, with no conversation recovery.
+- Desktop browser/local Pedelec/default provider dependency.
+- TURN availability depends on configured Cloudflare Realtime credentials.
+- Local identity is not authentication; production account, abuse prevention and moderation infrastructure are outside this prototype.
+- Live two-client Pedelec, direct WebRTC and TURN relay acceptance remains required; unit doubles and control-plane tests alone do not certify that flow.

@@ -115,6 +115,10 @@ export default function App() {
     if (target === "lobby" && (!profile() || !readyForLobby())) return;
     if (!["connect", "interview", "publish", "lobby"].includes(target)) return;
     if (target === "lobby" && ["lobby", "match-proposal", "connecting", "exchange", "summary"].includes(stage())) return;
+    if (target === "lobby") {
+      await flow.probe();
+      if (!readyForLobby()) { setFlowError("Pedelec 尚未就緒，請回到連接頁重新檢查。"); return; }
+    }
     if (target !== "interview" && target !== "publish" && flow.active()) {
       try { await flow.end(); } catch (e) { setFlowError(`無法結束私人訪談：${errorMessage(e)}，請重試或重新整理。`); return; }
     }

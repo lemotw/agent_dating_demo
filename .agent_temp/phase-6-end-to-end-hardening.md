@@ -259,3 +259,19 @@ The MVP is complete when two real users/storage contexts can:
 10. return to Lobby cleanly for another match.
 
 Keep implementation close to the prototype instead of expanding scope.
+
+## Implementation and verification status — 2026-10-04
+
+The Phase 6 implementation and automated verification are complete. Full live two-user acceptance is still pending; this status does not certify the real Pedelec/WebRTC/TURN completion criteria above.
+
+- Preserved the single top-level stage and mounted match controller. Restored profiles cannot bypass Pedelec readiness/approval; explicit Lobby entry rechecks availability, and publication returns safely to readiness if Pedelec is no longer available.
+- Added bounded Lobby reconnect with 1/2/4/8-second backoff, visible status, sanitized republishing, old-socket handler detachment and timer cleanup. Invalid protocol/duplicate identity failures require manual correction. Match-time control disconnect terminates the match rather than recovering an old conversation.
+- Released active DO reservations on control socket departure, avoiding a 30-minute stale match after tab close/reload. Peer failure cancels pending orchestration and tears down match resources. Local Agent errors poison the session, stop automatic replies, notify through end control when possible and remain visible on the summary screen.
+- Centralized reconnect, TURN upstream/rate-limit and profile/SDP bounds alongside the existing consent/RTC/summary timeouts. The independent default per-Agent cap remains 50; focused orchestration tests inject a cap of two.
+- Added a bounded private-interview operation timeout so a stalled SDK call does not permanently lock navigation or permit overlapping retries. Restored profile data is re-sanitized before persistence/use.
+- Fixed TURN secret declarations to the variable names `TURN_KEY_ID` and `TURN_KEY_API_TOKEN`, regenerated Worker types, and kept credential values out of source/configuration. The user is moving their local values into ignored `.dev.vars`.
+- Replaced historical phase-progress README text with the production MVP guide, including Cloudflare binding/migration/assets, local commands, TURN setup, two-context testing, recovery, bounds and explicit limitations. Prototype files were not changed.
+- Added `npm test` using Node's runner and Vite's TypeScript loader. All 13 focused tests passed. Existing smoke and expanded real Worker/DO Lobby suites passed. Type generation/typecheck and production build passed.
+- Browser inspection in Chrome and the in-app browser verified the unapproved Pedelec startup state and staged visual layout. The test origin was not approved for Pedelec; the verification server did not have TURN values configured. No real managed session exchange, direct RTC or forced-relay success is claimed.
+
+See `docs/acceptance.md` for the 21-scenario live procedure, executed evidence and pending real-runtime rows. Remaining release acceptance: approve Pedelec in two independent browser contexts, configure/load TURN credentials, and execute the real interview → consent → direct/relay RTC → Agent exchange → peer summary → return/rematch matrix. No remote deployment was performed.

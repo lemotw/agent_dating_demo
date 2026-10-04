@@ -1,4 +1,4 @@
-import { isClientId, PEER_PROTOCOL_VERSION, MAX_PEER_TEXT_LENGTH, MAX_SENT_TURNS_PER_AGENT } from "./constants";
+import { isClientId, PEER_PROTOCOL_VERSION, MAX_PEER_TEXT_LENGTH, MAX_SENT_TURNS_PER_AGENT, MAX_PROFILE_TEXT_LENGTH, MAX_PROFILE_ITEM_LENGTH, MAX_PROFILE_ITEMS, MAX_SDP_LENGTH } from "./constants";
 import type { LobbyAgentProfile, MatchConsent, ProfileSectionId } from "./types";
 
 export type LobbyClientMessage =
@@ -25,8 +25,8 @@ export type LobbyServerMessage =
 export const isObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 const keys = (value: Record<string, unknown>, allowed: string[]) => Object.keys(value).every(key => allowed.includes(key));
-const text = (value: unknown): value is string => typeof value === "string" && !!value.trim() && value.length <= 4000;
-const items = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 20 && value.every(item => text(item) && item.length <= 120);
+const text = (value: unknown): value is string => typeof value === "string" && !!value.trim() && value.length <= MAX_PROFILE_TEXT_LENGTH;
+const items = (value: unknown): value is string[] => Array.isArray(value) && value.length <= MAX_PROFILE_ITEMS && value.every(item => text(item) && item.length <= MAX_PROFILE_ITEM_LENGTH);
 const sectionIds: ProfileSectionId[] = ["people", "topics", "context", "experience", "conversation_style", "boundaries"];
 
 /** Strict public allowlist: extra/private fields never enter Lobby state. */
@@ -72,7 +72,7 @@ const identity = (value: Record<string, unknown>) => [value.matchId, value.sende
 export function isSignalingMessage(value: unknown): value is SignalingMessage {
   if (!isObject(value) || value.v !== PEER_PROTOCOL_VERSION || value.type !== "signal" || !keys(value, ["v", "type", "matchId", "senderClientId", "lobbySessionId", "payload"]) || !identity(value) || !isObject(value.payload)) return false;
   const payload = value.payload;
-  if (payload.kind === "offer" || payload.kind === "answer") return keys(payload, ["kind", "sdp"]) && typeof payload.sdp === "string" && payload.sdp.length > 0 && payload.sdp.length <= 64 * 1024;
+  if (payload.kind === "offer" || payload.kind === "answer") return keys(payload, ["kind", "sdp"]) && typeof payload.sdp === "string" && payload.sdp.length > 0 && payload.sdp.length <= MAX_SDP_LENGTH;
   if (payload.kind !== "ice" || !keys(payload, ["kind", "candidate"]) || !isObject(payload.candidate)) return false;
   const c = payload.candidate;
   return keys(c, ["candidate", "sdpMid", "sdpMLineIndex", "usernameFragment"]) && typeof c.candidate === "string" && c.candidate.length <= 4096 && (c.sdpMid === null || (typeof c.sdpMid === "string" && c.sdpMid.length <= 256)) && (c.sdpMLineIndex === null || (Number.isInteger(c.sdpMLineIndex) && Number(c.sdpMLineIndex) >= 0 && Number(c.sdpMLineIndex) <= 65535)) && (c.usernameFragment === undefined || c.usernameFragment === null || (typeof c.usernameFragment === "string" && c.usernameFragment.length <= 256));

@@ -1,7 +1,7 @@
 import { Show } from "solid-js";
 import type { ExchangeFlow, EndReason } from "./exchange";
 
-const reasons: Record<EndReason, string> = { natural: "自然結束", turn_limit: "已達輪次上限", user_ended: "你結束了對話", peer_ended: "對方結束了對話", connection_lost: "連線中斷或 Agent 就緒逾時" };
+const reasons: Record<EndReason, string> = { natural: "自然結束", turn_limit: "已達輪次上限", user_ended: "你結束了對話", peer_ended: "對方結束了對話", connection_lost: "對方已離線或連線中斷", local_agent_error: "本機 Agent 發生錯誤，已停止交流" };
 export default function SummaryPreview(props: { flow: ExchangeFlow; onReturn: () => void }) {
   return <div class="panel">
     <span class="eyebrow">TAKE SOMETHING WITH YOU</span>

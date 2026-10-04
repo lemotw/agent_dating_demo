@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { API_ROUTES, isClientId, LOBBY_HELLO_TIMEOUT_MS, MATCH_CONNECT_TIMEOUT_MS, MATCH_CONSENT_TIMEOUT_MS, MATCH_ACTIVE_TIMEOUT_MS, MAX_LOBBY_MESSAGE_BYTES } from "../src/shared/constants";
+import { API_ROUTES, isClientId, LOBBY_HELLO_TIMEOUT_MS, MATCH_CONNECT_TIMEOUT_MS, MATCH_CONSENT_TIMEOUT_MS, MATCH_ACTIVE_TIMEOUT_MS, MAX_LOBBY_MESSAGE_BYTES, TURN_REQUEST_INTERVAL_MS } from "../src/shared/constants";
 import { parseLobbyClientMessage, type LobbyServerMessage, type MatchCancellationReason } from "../src/shared/protocol";
 import type { ActiveMatch, LobbyAgentProfile, LobbySocketAttachment } from "../src/shared/types";
 import { issueTurnCredentials, parseTurnRequest, readBoundedJson } from "./turn";
@@ -159,7 +159,7 @@ export class Lobby extends DurableObject<Env> {
     const match = this.getMatch(input.matchId);
     if (!participant || !match || !this.authorized(match, participant[1], input.clientId, input.lobbySessionId) || this.participants(match).length !== 2) return reply("match_not_authorized", 403);
     const [socket, data] = participant;
-    if ((data.turnRequests ?? 0) >= 3 || Date.now() - (data.lastTurnRequestAt ?? 0) < 10_000) return reply("rate_limited", 429);
+    if ((data.turnRequests ?? 0) >= 3 || Date.now() - (data.lastTurnRequestAt ?? 0) < TURN_REQUEST_INTERVAL_MS) return reply("rate_limited", 429);
     // Reserve quota before external I/O, including failed attempts; survives hibernation.
     data.turnRequests = (data.turnRequests ?? 0) + 1;
     data.lastTurnRequestAt = Date.now();
