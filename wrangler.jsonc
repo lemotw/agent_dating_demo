@@ -7,11 +7,12 @@
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*"],
   },
   "durable_objects": {
-    "bindings": [{ "name": "LOBBY", "class_name": "Lobby" }]
+    "bindings": [{ "name": "LOBBY", "class_name": "Lobby" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }],
-  "observability": { "enabled": true, "head_sampling_rate": 1 }
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "secrets": { "required": ["TURN_KEY_ID", "TURN_KEY_API_TOKEN"] },
 }

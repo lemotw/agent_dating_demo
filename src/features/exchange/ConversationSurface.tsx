@@ -1,18 +1,18 @@
-import { Show } from 'solid-js';
+import { For, Show } from "solid-js";
+import { MAX_SENT_TURNS_PER_AGENT } from "../../shared/constants";
+import type { ExchangeFlow } from "./exchange";
 
-export default function ConversationSurface(props: { interview?: boolean }) {
+export default function ConversationSurface(props: { flow: ExchangeFlow; onReturn: () => void }) {
+  const flow = () => props.flow;
   return <div class="panel">
-    <div class="row"><b>{props.interview ? '✳ 你的理解夥伴' : '✳ Agent 對話'}</b><span class="pill">畫面預覽</span></div>
-    <div class="chat" aria-label="對話預覽">
-      <div class="message"><small>{props.interview ? '你的 Agent · 示例' : '我的 Agent · 示例'}</small>
-        {props.interview ? '你想和什麼樣的夥伴交換想法？有沒有一個最近讓你好奇的題目？' : '如果把科技當成創作的材料，你最想從哪個日常問題開始？'}
-      </div>
-      <div class="message peer"><small>{props.interview ? '你的回答 · 示例' : '對方 Agent · 示例'}</small>
-        {props.interview ? '我想聊聊創作工具，也想聽見和我不同的觀點。' : '我會從記錄靈感開始，讓工具保留意外發現的空間。'}
-      </div>
-      <div class="empty-line">後續會在這裡呈現實際對話</div>
+    <div class="row"><b>✳ {flow().local.agentName} ↔ {flow().peer.agentName}</b><span class="pill">Agent 對話</span></div>
+    <p class="note">你的 Agent：{flow().sentTurns()} / {MAX_SENT_TURNS_PER_AGENT} sent · 對方：{flow().peerTurns()} / {MAX_SENT_TURNS_PER_AGENT} sent</p>
+    <div class="chat" aria-label="Agent 交流對話" aria-live="polite" aria-relevant="additions">
+      <For each={flow().messages()}>{message => <div classList={{ message: true, peer: message.side === "peer" }}><small>{message.side === "local" ? flow().local.agentName : flow().peer.agentName}</small>{message.text}</div>}</For>
+      <Show when={!flow().messages().length}><p class="muted">等待雙方 Agent 就緒，由發起連線的一方開場。</p></Show>
     </div>
-    <Show when={props.interview}><label for="interview-answer">給你的 Agent（訪談回答預設不公開）</label><textarea id="interview-answer" disabled placeholder="連接 Pedelec 後，即可開始訪談。" /></Show>
-    <p class="note">以上為固定示例，本階段不執行模型或傳送對話。</p>
+    <p role="status">{flow().busy() ? "你的 Agent 正在思考…" : "等待對方 Agent 的完整回覆。"}</p>
+    <Show when={flow().error()}><p class="error" role="alert">{flow().error()}</p><button disabled={flow().busy()} onClick={flow().retry}>重試本機 Agent</button></Show>
+    <div class="actions"><button onClick={flow().end}>結束對話並產生摘要</button><button class="quiet" onClick={props.onReturn}>離開並返回 Lobby</button></div>
   </div>;
 }

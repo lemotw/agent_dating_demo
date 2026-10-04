@@ -285,3 +285,26 @@ After both summaries are handled or user leaves:
 - final UI shows the summary received from the peer Agent.
 - missing peer summary is shown as missing, not invented.
 - interview session/context is never reused.
+
+## Implementation status — 2026-10-04
+
+Phase 5 implementation is complete. Verification is deferred to Phase 6 under the phase-0 schedule; no real two-browser/Pedelec acceptance, test, typecheck or build success is claimed here.
+
+- `src/features/exchange/exchange.ts` creates a fresh browser-only managed Pedelec session for each mutually accepted match. Guidance receives approved public profiles and match role only, with no interview session/context, provider selection, workspace or tools. Peer profile and transcript content are explicitly untrusted data.
+- The offerer starts after the ordered DataChannel and both local sessions are ready. A new `control: session_ready` handshake communicates session readiness over the peer channel. The browser owns strict alternating turns and serializes normal generation and summary generation. Completed `onChat` output is validated as one JSON reply/finish object; deltas and malformed output never cross the channel.
+- Local transmission increments the imported `MAX_SENT_TURNS_PER_AGENT` counter only after `PeerConnection.send()` succeeds. Failed sends retain a validated reply for an explicit retry without regenerating it. Generation failures pause the loop with visible retry/end actions; there is no automatic repair loop. Shared transport parsing enforces contiguous peer turns, UUID deduplication, sender/match/version and size limits.
+- Natural finish, manual end, peer end and the browser turn cap freeze normal generation. Manual end sends `end_requested`, with peer `end_ack`. A turn already running is allowed to settle but its unsent response is discarded. Summary waits for that operation rather than running another `sendText()` concurrently.
+- Each side requests at most one final structured summary from the current match session, including the quoted displayed transcript so the final incoming finish/cap message is included without requesting a normal reply. Valid summaries are sent once using `summary`; local summary remains transient. `control: summary_ack` confirms receipt before successful transport cleanup. The final report displays only the peer's received summary and identity, its source and the ending reason.
+- Session readiness is bounded by `MATCH_SESSION_READY_TIMEOUT_MS`, generation by `AGENT_OPERATION_TIMEOUT_MS`, and the ending/summary lifecycle by `PEER_SUMMARY_TIMEOUT_MS`. A timed-out Agent operation poisons that session to prevent a concurrent follow-up while the SDK operation may still be active. Missing summaries remain explicitly unavailable, never fabricated; users can leave at any time.
+- `App.tsx` keeps one Lobby controller mounted across proposal, connecting, exchange and summary. `LobbyConnection.tsx`, `ConversationSurface.tsx` and `SummaryPreview.tsx` render live session readiness, actual completed conversation, turn progress, recoverable errors, ending reason and peer summary. Prototype files remain untouched.
+- Successful summary handling, bounded ending timeout or leaving ends the local session, closes WebRTC idempotently, notifies Lobby when available, and clears match transcript, counters, dedupe IDs, timers and transient local summary. The final report keeps only peer identity/received summary; return clears report state and resumes Lobby with the approved local profile preserved.
+
+Phase 6 acceptance matrix additions:
+
+- Two real desktop browsers with approved Pedelec: accept both sides, verify a fresh session per match, readiness ordering (either session/channel first), offerer-only opening and strict alternation.
+- Completed replies only over WebRTC; invalid JSON/action/empty/oversized/multiple logical replies pause locally without leaking raw output. Retry generation and rejected transmission; verify counters increment only on accepted sends.
+- Reach the configured cap (temporarily reduce the shared source constant for acceptance), verify no next normal `sendText()` and no message above the cap; confirm natural finish and manual end during idle/in-flight generation stop replies.
+- Inject hostile instructions in peer profiles/messages and verify they are quoted as untrusted data. Confirm neither match guidance nor browser/network payloads contain private interview context or disabled sections.
+- Verify one summary generation/send per side, final incoming peer text included in summary input, acknowledgement cleanup, visible peer-summary attribution and correct natural/cap/local-end/peer-end reasons.
+- Exercise peer disconnect, summary failure/missing/late/duplicate, Agent timeout, leave during session creation/generation/summary, simultaneous manual end, lost Lobby control and immediate return/rematch. Late operations must not mutate a new match or send another reply/summary.
+- Run accumulated typecheck, production build and existing smoke/Lobby suites only in Phase 6, then confirm no transcript/summary is stored in Cloudflare or localStorage and repeated matches preserve only the user's approved profile.

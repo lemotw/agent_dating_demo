@@ -1,5 +1,19 @@
 # Phase 1 — SolidJS/Vite + Cloudflare Application Bootstrap
 
+## Completion record — 2026-10-04
+
+Status: completed locally. Deployment is not part of this phase.
+
+- SolidJS/TypeScript/Vite application created beside the preserved prototype, with all eight staged preview surfaces.
+- Cloudflare Vite integration, Worker static assets/SPA fallback, generated binding types, and global `Lobby` Durable Object configured.
+- Lobby WebSocket accepts connections using the Hibernation API, restores attachment metadata, handles bootstrap control messages, and cleans up close/error state. No database storage or matchmaking implemented.
+- Browser client UUID persists in localStorage; shared turn cap and protocol version constants are in `src/shared/constants.ts`.
+- TURN credential route contract is documented and fails closed with HTTP 501 pending phase 4.
+- Verified: `npm run dev`, TypeScript checks, production build, and smoke checks against both development and built-preview servers. Browser verified the staged shell and real Lobby connection status.
+- All five `prototype/` file SHA-256 hashes match the pre-implementation snapshot. Existing user Git changes were preserved.
+
+See `README.md` for commands, route contracts, and phase boundaries.
+
 Read `phase-0-shared-contract.md` first.
 
 ## Objective

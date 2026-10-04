@@ -1,6 +1,6 @@
-import { isClientId } from '../../shared/constants';
+import { isClientId } from "../../shared/constants";
 
-const CLIENT_ID_KEY = 'agent-chat.clientId';
+const CLIENT_ID_KEY = "agent-chat.clientId";
 
 export function getOrCreateClientId(storage: Storage = localStorage): string {
   const stored = storage.getItem(CLIENT_ID_KEY);

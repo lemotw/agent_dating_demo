@@ -200,3 +200,19 @@ Provide one idempotent teardown method that:
 - normal peer application messages travel through DataChannel.
 - invalid/wrong-match/duplicate envelopes are ignored or rejected safely.
 - connection failure becomes a visible bounded failure state.
+
+## Implementation status — 2026-10-04
+
+Phase 4 implementation is complete. Acceptance execution remains deferred to Phase 6 as required by phase 0; no runtime/browser success is claimed here.
+
+- `src/features/rtc/peer.ts`: dedicated per-match peer service with deterministic offer/answer, reliable ordered `agent-chat-v1`, Cloudflare STUN + authorized temporary TURN, trickle ICE, credential-readiness buffering, serialized signaling, pre-description ICE queue, bounded setup/disconnect deadlines, idempotent teardown and stale-match guards.
+- `src/shared/protocol.ts`: strict signaling and match-control allowlists plus versioned `PeerEnvelope` parsing. Peer transport validates JSON, version, match, peer sender, UUID, known type, timestamp, bounded text and contiguous/capped Agent turns; received IDs use a bounded dedupe set. `send()`/`subscribe()` provide Phase 5's P2P-only application transport.
+- `worker/turn.ts`, `worker/index.ts`, `worker/lobby-do.ts`: accepted-match/session authorization, bounded JSON bodies, secret-only Cloudflare credential issuance, one-hour temporary TTL, eight-second upstream timeout, three-attempt per-participant/per-match quota with ten-second spacing and post-fetch authorization recheck. Responses are not cached; generic errors do not leak upstream secrets.
+- Lobby signaling is forwarded only to the matched peer after current socket/session/client, mutual consent, phase, expiry and SDP-role validation. Both readiness reports activate a 30-minute bounded reservation. Active control-socket loss preserves the match; leave/failure/expiry cleans it up. Connection cancellations pause the Lobby until explicit `resume_lobby`, preserving a visible recoverable terminal state.
+- `lobby.ts`, `LobbyConnection.tsx`, `ConnectionPreview.tsx`, `App.tsx`: automatic setup only on `match_ready`, real connection states, development-only diagnostic subtext, bounded recovery, explicit return and teardown. Phase 5's Agent execution remains outside this scope.
+- `wrangler.jsonc` declares `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` secret names. `npm run typegen` generated their Worker bindings; this is the phase-0 required-artifact exception. Actual TURN secrets must be provisioned through ignored `.dev.vars` / Wrangler secrets before real connectivity acceptance. No secret values were created or committed.
+- README documents configuration, lifecycle, Phase 5 integration and the Phase 6 acceptance matrix. The smoke suite's old TURN placeholder expectation now checks rejected unauthorized requests; it was not executed.
+
+The Lobby keeps each bearer `lobbySessionId` private to its owner. Forwarded signaling contains the public `senderSocketId` instead, preventing peers from learning each other's TURN authorization tokens.
+
+Phase 6 must run typecheck/build and accumulated suites, then exercise real browsers for deterministic negotiation, direct/forced TURN connectivity, envelope rejection/dedupe/turn validation, credential authorization/rate-limit/cancellation races, hibernation, active control-socket loss and bounded failure/expiry/return. Confirm forwarded signals contain no bearer session token and production assets contain no long-lived TURN secrets or development diagnostic UI.

@@ -201,3 +201,17 @@ When leaving profile creation:
 - Raw interview transcript never enters Lobby payload.
 - Valid profile persists locally and can be restored.
 - Match chat does not reuse the interview session.
+
+## Implementation handoff (2026-10-04)
+
+Phase 2 implementation is complete; acceptance verification is deferred to Phase 6 per the shared contract.
+
+- Browser SDK dependency: `@kaoruisaac/pedelec` 0.4.9, recorded in package-lock.json.
+- `src/features/onboarding/interview.ts`: SDK readiness probe, explicit origin approval/session creation, six checkpoint turns, structured candidate generation, serialized sends, completed-message handling and private session cleanup.
+- `src/features/onboarding/InterviewPanel.tsx`: progressive private interview, skip and visible retryable errors.
+- `src/features/profile/ProfileReview.tsx`: editable summary, topics, expectations and individually opt-in sections, explicit publication consent and minimum-content gate.
+- `src/features/profile/profile.ts`: strict candidate/local-profile validation, local save/restore and centralized public payload allowlist. Disabled sections are discarded on save; transcripts remain ephemeral.
+- `src/shared/types.ts`: candidate, local and Lobby profile contracts.
+- `src/App.tsx`: readiness blocking, setup stage gates, restored-profile actions and cleanup before leaving setup. Later match stages remain previews and cannot access the private session.
+
+Phase 6 should verify missing extension/Desktop/unapproved origin, real default-provider interview (including skip and double-send protection), failed turns, invalid candidate/retry, review editing and focus preservation, explicit consent/minimum-content gate, storage failures and reload restoration, enabled-only sanitized payloads, session cleanup failures, and fresh-session privacy boundaries in the eventual match implementation. No tests, typecheck, build or manual acceptance pass was run in Phase 2.

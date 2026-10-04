@@ -206,3 +206,29 @@ It must not carry normal Agent conversation messages or summaries after DataChan
 - socket close removes waiting presence.
 - no raw/private interview content enters DO state.
 - no Agent conversation transcript is stored in the Durable Object.
+
+## Implementation handoff (2026-10-04)
+
+Phase 3 implementation is complete; acceptance verification is deferred to Phase 6 per the shared contract. No tests, typecheck, build or browser/manual acceptance were run in this phase.
+
+- `worker/lobby-do.ts`: one global hibernating Lobby; attachment identity/status restoration; strictly validated hello/publication; server-assigned join order; synchronous newest-eligible reservations; persisted short-lived match records; independent session-bound consent; deterministic newer-entrant offerer; two-sided readiness; bilateral per-session rejection memory; duplicate-client exclusion; close/error cancellation/rematch; earliest-deadline alarm cleanup.
+- DO SQLite holds only approved public profiles and temporary control/rejection records. Attachments hold compact metadata, not full cards. Closed sessions and orphan rows are deleted. No Pedelec identifiers, private interview objects, Agent messages or summaries are admitted by the protocol.
+- `src/shared/types.ts`, `protocol.ts`, `constants.ts`: shared public-card validator, explicit consent/control envelopes, match/session types and payload/expiry constants. Unknown and extra fields are rejected rather than forwarded.
+- `src/features/lobby/lobby.ts`: browser-only persistent socket controller, sanitized hello, validated server events, decisions and explicit reconnect. `LobbyConnection.tsx` renders real public peer cards, accept/decline, peer-decision wait, cancellation and offline states.
+- `src/App.tsx`: publishing/continuing enters the live Lobby; one grouped stage branch retains the socket through waiting/proposal/connecting. Later-stage navigation cannot bypass the server consent gate. Returning to setup tears down the Lobby.
+- `scripts/lobby-smoke.mjs` and `npm run test:lobby`: deferred Phase 6 control-flow acceptance coverage. Existing smoke expectations now match the strict protocol and 96 KiB control limit.
+
+Phase 4 integration points:
+- Extend `LobbyClientMessage`/`LobbyServerMessage` with allowlisted SDP/ICE/control messages; authorize sender by socket attachment and match session membership, and forward only to its peer.
+- Use `lobbySessionId` (and/or issued socket identity) for accepted-match TURN authorization. `ActiveMatch` carries both client IDs, session IDs, consents, offerer, phase and expiry.
+- Only the `match_ready` event may initiate WebRTC. The controller exposes proposal, readiness status, session ID and socket ID; socket ownership currently remains inside the controller.
+- Transition matches from connecting to active when DataChannel readiness is established. Give active records a bounded expiry/renewal policy and a completion cleanup path. The current disconnect branch preserves active reservations; activation itself belongs to Phase 4.
+- Connecting times out after 60 seconds in this phase because WebRTC is not yet implemented; the UI explicitly identifies this next-stage boundary and then returns to waiting on expiry.
+
+Phase 6 verification:
+- Run accumulated typecheck/build, `test:smoke` and `test:lobby` against an empty local Lobby.
+- Use two independent browser identities for publish, identical proposals, one-sided acceptance wait, both-sided readiness, decline and no immediate same-pair repeat, explicit reconnect, leave and duplicate-tab handling.
+- Verify recency with multiple eligible waiters (including equal-millisecond publication order), reservations under concurrent input, stale/foreign match decisions, wrong profile identity, disabled/private/extra fields, oversized/binary input and unsupported Agent transcript messages.
+- Verify hibernation with waiting, one-sided accepted consent, rejected pairs and connecting matches. Check attachments, public profiles, consent and deterministic roles restore; no participant becomes available twice.
+- Exercise hello/consent/connecting alarms, pre-activation close and error cleanup, orphan profile/rejection deletion and send-failure cleanup.
+- Once Phase 4 is implemented, verify active DataChannel conversation survives Lobby socket loss without duplicate matching, and active expiry/completion eventually releases records.
